@@ -1,17 +1,22 @@
-%% 參數設定
-nVar= 2;  % 變數個數(x1, x2)
-VarSize= [1, nVar];  % 變數矩陣大小
-VarMin= -10;  % 最小範圍
-VarMax= 10;  % 最大範圍
+%% 伺服馬達模型參數
+K = 1;
+tau = 0.5;
+Plant = tf(K, [tau 1]);
 
-MaxIt= 100;  % 最大迭代次數
-nBee= 100;  % 蜜蜂總數
-nEmp= floor(nBee / 2);  % 雇傭蜂數量
-nOnlooker= nBee - nEmp;  % 圍觀蜂數量
-Limit= 20;  % 忘記解的次數上限 ( scout bee條件 )
+%% ABC 參數設定
+nVar= 3;                    % PID 變數 : Kp, Ki, Kd
+VarSize= [1, nVar];         % 變數矩陣大小
+VarMin= [0 0 0];            % 增益下限
+VarMax= [10 10 2];          % 增益上限(Kd不宜過高)
+
+MaxIt= 50;                  % 最大迭代次數
+nBee= 30;                   % 蜜蜂總數
+nEmp= floor(nBee / 2);      % 雇傭蜂數量
+nOnlooker= nBee - nEmp;     % 圍觀蜂數量
+Limit= 10;                  % 忘記解的次數上限 ( scout bee條件 )
 
 %% 目標函數定義
-CostFunction= @(x) sum(x.^2);  % f(x)= x1^2 + x2^2
+CostFunction= @(x) EvaluatePID(x, Plant);
 
 %% 初始族群
 emptyBee.Position = [];
@@ -109,12 +114,16 @@ for it = 1:MaxIt
     fprintf('Iteration %d: Best Cost = %.5f\n', it, BestCost(it));
 end
 
+%% 顯示最佳PID
+BestPID = BestSol.Position;
+fprintf('\n最佳PID參數: Kp = %.4f, Ki = %.4f, Kd = %.4f\n', BestPID(1), BestPID(2), BestPID(3));
+
 %% 繪製收斂圖
 figure;
 plot(1:MaxIt, BestCost, 'r-', 'LineWidth', 2);
 xlabel('迭代次數');
-ylabel('最佳成本');
-title('人工蜂群演算法收斂圖');
+ylabel('成本(IAE)');
+title('ABC最佳化PID控制器');
 grid on;
 set(gcf, 'Color', 'w');
 
@@ -123,4 +132,25 @@ function i = RouletteWheelSelection(P)
     r = rand;
     C = cumsum(P);
     i = find(r <= C, 1, 'first');
+end
+
+%% 評估成本函數:IAE
+function J = EvaluatePID(x, Plant)
+    Kp = x(1);
+    Ki = x(2);
+    Kd = x(3);
+
+    % PID 控制器
+    C = pid(Kp, Ki, Kd);
+
+    % 閉迴路系統
+    T = feedback(C * Plant, 1);
+
+    % 階躍響應
+    t = 0:0.01:5;
+    y = step(T, t);
+
+    % 計算IAE(積分絕對誤差)
+    e = 1- y;
+    J = trapz(t, abs(e));
 end
